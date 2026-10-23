@@ -1,0 +1,14 @@
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { CartProvider } from './context/CartContext';
+import { Layout } from './components/Layout';
+import { Home } from './pages/Home';
+import { RestaurantPage } from './pages/Restaurant';
+import { CartPage } from './pages/Cart';
+import { CheckoutPage } from './pages/Checkout';
+import { OrdersPage } from './pages/Orders';
+import { TrackingPage } from './pages/Tracking';
+import { ConsolePage } from './pages/Console';
+import './styles/index.css';
+ReactDOM.createRoot(document.getElementById('root')).render(<React.StrictMode><CartProvider><BrowserRouter><Routes><Route element={<Layout />}><Route path="/" element={<Home />}/><Route path="/restaurant/:id" element={<RestaurantPage />}/><Route path="/cart" element={<CartPage />}/><Route path="/checkout" element={<CheckoutPage />}/><Route path="/orders" element={<OrdersPage />}/><Route path="/tracking/:id" element={<TrackingPage />}/><Route path="/console" element={<ConsolePage />}/><Route path="*" element={<div className="content-width py-24 text-center"><h1 className="text-5xl font-black">Page not found</h1><a className="btn-primary mt-5" href="/">Explore restaurants</a></div>}/></Route></Routes></BrowserRouter></CartProvider></React.StrictMode>);

@@ -1,0 +1,1 @@
+module.exports={content:['./index.html','./src/**/*.{js,jsx}'],theme:{extend:{colors:{ink:'#26312C',muted:'#69726B',cream:'#FFF9F4',peach:'#FFF0E5',coral:'#FC603E',light:'#F5F4F0',leaf:'#DFF4E8'},fontFamily:{sans:['Inter','ui-sans-serif','system-ui','sans-serif']},boxShadow:{soft:'0 8px 32px rgba(32,42,34,.07)'},borderRadius:{xl:'16px', '2xl':'22px'}}},plugins:[]};

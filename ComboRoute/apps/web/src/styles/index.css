@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+:root{font-family:'DM Sans',Inter,Arial,sans-serif;color:#26312c;background:#fffdfb;font-synthesis:none}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0}button,input,textarea,select{font:inherit}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.6}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #fca788;outline-offset:2px}img{max-width:100%;display:block}.font-outfit{font-family:Outfit,Inter,Arial,sans-serif}
+@layer components{
+ .content-width{@apply max-w-7xl mx-auto px-4 md:px-8}
+ .eyebrow{@apply text-[11px] font-extrabold tracking-[.16em] text-coral flex gap-2 items-center}
+ .section-heading{@apply font-outfit text-2xl md:text-[29px] font-extrabold tracking-[-.035em]}
+ .page-heading{@apply mt-8 flex gap-5 flex-wrap justify-between items-center}
+ .panel{@apply bg-white border border-[#EEECE8] rounded-2xl shadow-soft}
+ .btn-primary{@apply inline-flex items-center justify-center gap-2 rounded-xl bg-coral text-white font-extrabold text-sm py-3.5 px-5 hover:bg-[#EB4F2F] transition-colors disabled:opacity-50}
+ .btn-dark{@apply inline-flex items-center justify-center gap-2 rounded-xl bg-ink text-white font-bold text-sm py-3 px-5 hover:bg-[#3B4A42] transition-colors}
+ .btn-secondary{@apply inline-flex items-center justify-center gap-2 rounded-xl bg-white border border-[#E8E7E0] text-ink font-bold text-sm py-3 px-5 hover:bg-light transition-colors}
+ .field{@apply w-full rounded-xl border border-[#E6E5E0] bg-white px-3.5 py-3 text-sm outline-none focus:ring-2 focus:ring-coral/40}
+ .restaurant-card{@apply block bg-white border border-[#EEECE8] rounded-2xl overflow-hidden shadow-soft hover:shadow-xl transition-all duration-300 hover:-translate-y-1}
+ .rating{@apply inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-extrabold bg-[#E4F6E9] text-green-800}
+ .category-pill{@apply rounded-full border border-[#E8E5DF] px-4 py-2 text-xs font-extrabold text-[#786F66] hover:border-coral hover:text-coral transition-colors whitespace-nowrap}
+ .category-pill.active{@apply bg-ink border-ink text-white hover:text-white}
+ .feature{@apply flex items-center gap-4 rounded-xl p-4 sm:p-5}
+ .feature-icon{@apply w-12 h-12 shrink-0 bg-white rounded-xl grid place-items-center}
+ .feature h3{@apply text-sm font-extrabold}
+ .feature p{@apply text-xs text-muted mt-1}
+ .add-button{@apply border-2 border-[#D7EDD9] rounded-lg bg-white text-green-800 min-w-[90px] py-2 px-4 shadow-md font-extrabold text-sm flex items-center justify-center gap-2 hover:bg-green-50}
+ .qty{@apply bg-white border-2 border-[#D7EDD9] min-w-[95px] rounded-lg shadow-md py-2 px-2 text-sm font-extrabold flex items-center justify-between gap-2 text-green-800}
+ .qty button{@apply hover:text-coral}
+ .choice-card{@apply text-left rounded-2xl border-2 border-[#E9E7E2] bg-white p-5 hover:border-[#F9BBA9] transition-colors}
+ .choice-card.selected{@apply border-coral bg-[#FFF8F3]}
+ .choice-radio{@apply text-xl text-coral}
+ .bill-row{@apply flex justify-between gap-5 text-muted}
+}
+.hero{min-height:355px;position:relative;overflow:hidden;border-radius:26px;background:linear-gradient(120deg,#fff0e5 25%,#ffcfb6 100%);padding:3.5rem 3rem}.hero-art{position:absolute;inset:0;pointer-events:none}.hero-plate{position:absolute;border-radius:50%;border:8px solid #fff8ee;overflow:hidden;box-shadow:0 13px 38px #7a41272b}.hero-plate img{height:100%;width:100%;object-fit:cover}.hero-plate-a{height:230px;width:230px;right:25%;top:28px;transform:rotate(13deg)}.hero-plate-b{height:190px;width:190px;right:5%;bottom:-22px;transform:rotate(-11deg)}.hero-journey{position:absolute;right:12%;top:52%;transform:rotate(4deg);background:white;border-radius:14px;padding:10px 15px;box-shadow:0 8px 25px #82503630;font-size:11px;font-weight:800;white-space:nowrap}.hero-sticker{position:absolute;right:5%;top:35px;transform:rotate(8deg);background:white;border-radius:12px;padding:12px;font-size:11px;font-weight:800;color:#1c8060}@media(max-width:950px){.hero-plate-a{right:8%;opacity:.65}.hero-plate-b{right:-4%;opacity:.7}.hero-art{opacity:.55}.hero-journey,.hero-sticker{display:none}.hero{padding:3rem 2rem}}@media(max-width:600px){.hero{padding:2.5rem 1.5rem;min-height:380px}.hero-art{opacity:.24}.hero-plate-a{right:-16%;top:20px}.hero-plate-b{right:-15%;bottom:-35px}.hero h1{max-width:325px}}

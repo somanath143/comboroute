@@ -1,0 +1,52 @@
+name: Verify ComboRoute JavaScript
+on:
+  push:
+  pull_request:
+jobs:
+  build-and-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm install --no-audit --no-fund
+      - run: npm run check
+      - run: npm run build
+      - run: npm run test:core
+      - run: npm run test:order-state
+      - run: npm run test -w @comboroute/core
+      - run: npm run test -w @comboroute/web
+  mongo-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm install --no-audit --no-fund
+      - run: npm run build -w @comboroute/core
+      - name: Boot disposable MongoDB replica set
+        run: |
+          docker run -d --name cr-mongo -p 27017:27017 mongo:7 mongod --replSet rs0 --bind_ip_all
+          for n in {1..30}; do
+            docker exec cr-mongo mongosh --quiet --eval 'db.adminCommand({ping:1})' && break
+            sleep 2
+          done
+          docker exec cr-mongo mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
+          # Wait for election instead of an arbitrary fixed sleep; prevents flaky CI.
+          ready=0
+          for n in {1..45}; do
+            if docker exec cr-mongo mongosh --quiet --eval 'rs.status().myState' | grep -qx '1'; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" != "1" ]; then
+            echo "MongoDB replica set did not become PRIMARY" >&2
+            docker logs cr-mongo
+            exit 1
+          fi
+      - name: Supertest integration suite
+        env:
+          TEST_MONGODB_URI: mongodb://127.0.0.1:27017/comboroute?replicaSet=rs0&directConnection=true
+        run: npm run test -w @comboroute/api

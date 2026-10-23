@@ -1,0 +1,18 @@
+{
+  "name": "@comboroute/core",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "node ../../scripts/copy-build.mjs core",
+    "check": "node ../../scripts/check-source.mjs core",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.9"
+  }
+}

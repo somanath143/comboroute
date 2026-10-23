@@ -1,0 +1,27 @@
+{
+  "name": "comboroute-javascript",
+  "private": true,
+  "version": "3.0.0",
+  "type": "module",
+  "packageManager": "npm@10.9.2",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "predev": "npm run build -w @comboroute/core",
+    "dev": "concurrently -k -n api,web -c blue,magenta \"npm run dev -w @comboroute/api\" \"npm run dev -w @comboroute/web\"",
+    "build": "npm run build -w @comboroute/core && npm run build -w @comboroute/web && npm run build -w @comboroute/api",
+    "check": "node scripts/check-source.mjs",
+    "test": "npm run build -w @comboroute/core && npm run test -w @comboroute/core && npm run test -w @comboroute/api && npm run test -w @comboroute/web",
+    "test:core": "npm run build -w @comboroute/core && node --test packages/core/tests/core.check.mjs",
+    "test:order-state": "node --test apps/api/src/services/order-transition.check.mjs",
+    "test:e2e": "playwright test",
+    "seed": "npm run seed -w @comboroute/api",
+    "start": "npm run start -w @comboroute/api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.0",
+    "@playwright/test": "^1.55.0"
+  }
+}
