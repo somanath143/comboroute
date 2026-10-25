@@ -11,7 +11,7 @@ COPY . .
 RUN npm run build
 RUN npm prune --omit=dev
 FROM node:22-alpine
-ENV NODE_ENV=production PORT=3000 REQUIRE_DEMO_AUTH=true
+ENV NODE_ENV=production PORT=3000 REQUIRE_DEMO_AUTH=false PAYMENT_MODE=demo
 WORKDIR /app
 COPY --from=builder /app /app
 EXPOSE 3000

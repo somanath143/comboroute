@@ -9,5 +9,42 @@ export const MenuModel = model('MenuItem', new Schema({ id: { type: Number, requ
 MenuModel.schema.index({ name: 'text', description: 'text' });
 export const QuoteModel = model('Quote', new Schema({ id: { type: String, required: true, unique: true }, customer_id: { type: Number, required: true, index: true }, address_id: Number, expires_at: { type: Date, required: true }, fingerprint: { type: String, required: true }, items: { type: Schema.Types.Mixed, required: true }, restaurant_ids: { type: [Number], required: true }, routing: { type: Schema.Types.Mixed, required: true }, pricing: { type: Schema.Types.Mixed, required: true }, driver_available: Boolean }, c));
 QuoteModel.schema.index({ expires_at: 1 }, { expireAfterSeconds: 86400 }); // keep expired quote briefly for a meaningful error
-export const OrderModel = model('Order', new Schema({ id: { type: String, unique: true, required: true }, short_code: String, customer_id: { type: Number, index: true, required: true }, address_id: Number, quote_id: String, idempotency_key: { type: String, required: true, unique: true }, fingerprint: String, mode: { type: String, enum: ['separate', 'combined'], required: true }, status: { type: String, required: true, index: true }, revision: { type: Number, default: 0, min: 0 }, total_paise: Number, pricing: Schema.Types.Mixed, routing: Schema.Types.Mixed, note: String, failure_reason: { type: String, default: null }, items: [{ menu_item_id: Number, restaurant_id: Number, name: String, price_paise: Number, quantity: Number }], legs: [{ restaurant_id: Number, status: String, eta_minutes: Number }], events: [{ status: String, message: String, timestamp: String }] }, c));
+export const OrderModel = model('Order', new Schema({ id: { type: String, unique: true, required: true }, short_code: String, customer_id: { type: Number, index: true, required: true }, address_id: Number, quote_id: String, idempotency_key: { type: String, required: true, unique: true }, fingerprint: String, mode: { type: String, enum: ['separate', 'combined'], required: true }, status: { type: String, required: true, index: true }, total_paise: Number, pricing: Schema.Types.Mixed, routing: Schema.Types.Mixed, note: String, failure_reason: { type: String, default: null }, items: [{ menu_item_id: Number, restaurant_id: Number, name: String, price_paise: Number, quantity: Number }], legs: [{ restaurant_id: Number, status: String, eta_minutes: Number }], events: [{ status: String, message: String, timestamp: String }], delivery_partner_id: { type: String, default: null }, payment_id: String, payment_status: { type: String, default: 'demo' } }, { timestamps: true }));
 export const isMongoDuplicate = (error) => error instanceof mongoose.mongo.MongoServerError && error.code === 11000;
+
+// A user identity is distinct from the legacy numeric customer ID used by route/quote services.
+export const UserModel = model('AppUser', new Schema({
+  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+  name: { type: String, required: true },
+  password_hash: { type: String, required: true, select: false },
+  role: { type: String, required: true, enum: ['customer', 'restaurant', 'partner', 'admin'], default: 'customer' },
+  customer_id: { type: Number, unique: true, sparse: true },
+  restaurant_ids: { type: [Number], default: [] },
+  disabled: { type: Boolean, default: false }
+}, c));
+export const SessionModel = model('AppSession', new Schema({
+  token_hash: { type: String, required: true, unique: true },
+  user_id: { type: Schema.Types.ObjectId, ref: 'AppUser', required: true, index: true },
+  expires_at: { type: Date, required: true }
+}, c));
+SessionModel.schema.index({ expires_at: 1 }, { expireAfterSeconds: 0 });
+export const CounterModel = model('Counter', new Schema({ _id: String, value: Number }, { versionKey: false }));
+export const PaymentModel = model('PaymentIntent', new Schema({
+  id: { type: String, required: true, unique: true },
+  customer_id: { type: Number, required: true, index: true },
+  idempotency_key: { type: String, required: true, unique: true },
+  quote_id: { type: String, required: true },
+  razorpay_order_id: { type: String, unique: true, sparse: true },
+  razorpay_payment_id: { type: String, unique: true, sparse: true },
+  amount_paise: { type: Number, required: true },
+  status: { type: String, required: true, default: 'initiated' },
+  order_id: String,
+  refund_id: String,
+  refund_status: String,
+  checkout: { type: Schema.Types.Mixed, required: true }
+}, c));
+export const WebhookEventModel = model('WebhookEvent', new Schema({
+  event_id: { type: String, required: true, unique: true },
+  event_type: String,
+  processed_at: Date
+}, c));

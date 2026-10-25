@@ -1,3 +1,5 @@
+> **Legacy v3 reference.** This document predates v4 account roles and Razorpay TEST. See [README.md](README.md) and [Render deployment guide](docs/DEPLOY_RENDER.md) for current instructions.
+
 # ComboRoute JavaScript — Windows quick start
 
 ## Option 1: Docker Desktop

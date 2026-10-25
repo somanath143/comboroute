@@ -1,0 +1,15 @@
+import { useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { LockKeyhole, ArrowRight } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+export function AuthPage({ register = false }) {
+  const auth = useAuth(), navigate = useNavigate(), [params] = useSearchParams();
+  const [name, setName] = useState(''), [email, setEmail] = useState(''), [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const next = params.get('next');
+  const safeNext = next?.startsWith('/') && !next.startsWith('//') ? next : '/';
+  async function submit(e) { e.preventDefault(); setBusy(true); setError(''); try { const user = register ? await auth.register(name, email, password) : await auth.login(email, password); navigate(user.role === 'restaurant' ? '/console' : user.role === 'partner' ? '/partner' : user.role === 'admin' ? '/admin' : safeNext, { replace: true }); } catch (e) { setError(e.message); } finally { setBusy(false); } }
+  return <div className="content-width max-w-xl py-14"><div className="panel p-7 md:p-10"><div className="bg-peach rounded-2xl text-coral w-12 h-12 grid place-items-center"><LockKeyhole/></div><p className="eyebrow mt-6">YOUR COMBOROUTE ACCOUNT</p><h1 className="font-outfit text-3xl font-black mt-2">{register ? 'Create customer account' : 'Welcome back'}</h1><p className="text-muted text-sm mt-2">{register ? 'Customers can sign up. Restaurant and delivery partner accounts are issued by an administrator.' : 'Sign in to see your orders and access your authorized dashboard.'}</p>
+  <form className="space-y-4 mt-7" onSubmit={submit}>{register && <label className="block text-sm font-bold">Full name<input required minLength={2} maxLength={80} autoComplete="name" className="field mt-2" value={name} onChange={e=>setName(e.target.value)}/></label>}<label className="block text-sm font-bold">Email<input type="email" required autoComplete="email" className="field mt-2" value={email} onChange={e=>setEmail(e.target.value)}/></label><label className="block text-sm font-bold">Password<input type="password" required minLength={register ? 12 : 1} maxLength={128} autoComplete={register ? 'new-password' : 'current-password'} className="field mt-2" value={password} onChange={e=>setPassword(e.target.value)}/></label>{register && <p className="text-xs text-muted">Use at least 12 characters. Never reuse your MongoDB or Razorpay passwords.</p>}{error && <p role="alert" className="bg-red-50 text-red-800 p-3 rounded-xl text-sm">{error}</p>}<button disabled={busy} className="btn-primary w-full justify-between">{busy ? 'Please wait…' : register ? 'Create account' : 'Sign in'} <ArrowRight size={17}/></button></form>
+  <p className="mt-6 text-sm text-center">{register ? 'Already have an account?' : 'New to ComboRoute?'} <Link className="text-coral font-bold" to={register ? '/login' : '/signup'}>{register ? 'Sign in' : 'Create an account'}</Link></p><p className="text-xs text-muted mt-6">Fictional restaurants and simulated delivery. Razorpay, if configured, uses test mode only.</p></div></div>;
+}

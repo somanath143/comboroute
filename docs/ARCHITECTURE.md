@@ -1,3 +1,5 @@
+> **Legacy v3 reference.** This document predates v4 account roles and Razorpay TEST. See [README.md](../README.md) and [Render deployment guide](DEPLOY_RENDER.md) for current instructions.
+
 # Architecture & algorithm notes
 
 ## Monorepo

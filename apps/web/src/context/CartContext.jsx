@@ -4,7 +4,7 @@ const KEY = 'comboroute_react_cart_v2';
 function load() {
     try {
         const d = JSON.parse(localStorage.getItem(KEY) || '{}');
-        return { lines: Array.isArray(d.lines) ? d.lines.filter((x) => x.item && Number.isInteger(x.quantity) && x.quantity > 0) : [], addressId: [1, 2, 3].includes(d.addressId) ? d.addressId : 1 };
+        return { lines: Array.isArray(d.lines) ? d.lines.filter((x) => x.item && Number.isInteger(x.quantity) && x.quantity > 0) : [], addressId: Number.isInteger(d.addressId) && d.addressId > 0 ? d.addressId : 1 };
     }
     catch {
         return { lines: [], addressId: 1 };

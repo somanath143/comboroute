@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ArrowRight, BadgeIndianRupee, Bike, Leaf, Search, UtensilsCrossed } from 'lucide-react';
 import { RestaurantCard, Loading, ErrorView } from '../components/UI';
@@ -10,6 +10,7 @@ export function Home() {
     const [veg, setVeg] = useState(false), [sort, setSort] = useState('recommended');
     const selected = params.get('cuisine') ?? 'All';
     const q = params.get('q') ?? '';
+    useEffect(() => { setLocalSearch(q); if (q) { const t = setTimeout(() => document.getElementById('restaurants')?.scrollIntoView({ behavior: 'smooth' }), 80); return () => clearTimeout(t); } }, [q]);
     const query = new URLSearchParams({ q, cuisine: selected, veg_only: String(veg), sort });
     const { data, loading, error, reload } = useLoad(() => listRestaurants('?' + query.toString()), [q, selected, veg, sort]);
     const setCategory = (c) => setParams(p => { const next = new URLSearchParams(p); c === 'All' ? next.delete('cuisine') : next.set('cuisine', c); return next; });

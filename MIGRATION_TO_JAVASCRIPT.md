@@ -1,3 +1,5 @@
+> **Legacy v3 reference.** This document predates v4 account roles and Razorpay TEST. See [README.md](README.md) and [Render deployment guide](docs/DEPLOY_RENDER.md) for current instructions.
+
 # ComboRoute — JavaScript migration notes
 
 This revision uses **plain JavaScript (ES modules)** and **React JSX** instead of TypeScript.

@@ -1,3 +1,5 @@
+> **Legacy v3 reference.** This document predates v4 account roles and Razorpay TEST. See [README.md](../README.md) and [Render deployment guide](DEPLOY_RENDER.md) for current instructions.
+
 # ComboRoute API reference (v2)
 
 Responses use JSON. Errors: `{ "error": "message", "details": [] }` when applicable. The private demo is protected with HTTP Basic Authentication when `REQUIRE_DEMO_AUTH=true` or when running with `NODE_ENV=production` unless explicitly overridden. This gate protects *all* routes, including administration routes, but is **not** per-user authorization.

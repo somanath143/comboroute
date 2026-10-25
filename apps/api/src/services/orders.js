@@ -4,7 +4,6 @@ import { evaluateRoutes, calculatePricing, transitionAllowed, legTransitionAllow
 import { AddressModel, RestaurantModel, OrderModel, QuoteModel, isMongoDuplicate } from '../models/index.js';
 import { ApiError } from '../middleware/errors.js';
 import { basketHash, normalizedBasket } from './catalog.js';
-import { snapshotOrderForTransition, orderRevisionConstraint } from './order-transition.js';
 export async function quoteBasket(input) {
     const { address, canonical, restaurants } = await normalizedBasket(input.customer_id, input.address_id, input.items);
     const route = evaluateRoutes(restaurants, address.coordinates, canonical.reduce((n, i) => n + i.quantity, 0), { driverAvailable: input.driver_available });
@@ -17,7 +16,7 @@ export async function serializeOrder(order) {
     const address = await AddressModel.findOne({ id: order.address_id }).lean();
     const rests = await RestaurantModel.find({ id: { $in: order.legs.map(l => l.restaurant_id) } }).lean();
     const names = new Map(rests.map(r => [r.id, r.name]));
-    return { id: order.id, short_code: order.short_code, customer_id: order.customer_id, address_id: order.address_id, mode: order.mode, status: order.status,
+    return { id: order.id, short_code: order.short_code, customer_id: order.customer_id, address_id: order.address_id, mode: order.mode, status: order.status, payment_status: order.payment_status ?? 'demo', delivery_partner_id: order.delivery_partner_id ?? null,
         created_at: new Date(order.createdAt).toISOString(), total_paise: order.total_paise, pricing: order.pricing, routing: order.routing, note: order.note, failure_reason: order.failure_reason,
         address: { id: order.address_id, label: address?.label ?? 'Saved address', line: address?.line ?? '' },
         items: order.items.map(i => ({ ...i, restaurant_name: names.get(i.restaurant_id) ?? 'Restaurant' })),
@@ -61,7 +60,7 @@ export async function createOrder(input) {
         idempotency_key: input.idempotency_key, fingerprint: quote.fingerprint, mode: input.mode, status: 'confirmed',
         total_paise: pricing[input.mode].total_paise, pricing, routing: route, note: input.note, failure_reason: null,
         items: canonical, legs: restaurants.map(r => ({ restaurant_id: r.id, status: 'pending', eta_minutes: r.prep_minutes })),
-        events: [{ status: 'created', message: 'Order created and priced on the server.', timestamp: now }, { status: 'confirmed', message: 'Fictional kitchens notified. No payment taken.', timestamp: now }] };
+        events: [{ status: 'created', message: 'Order created and priced on the server.', timestamp: now }, { status: 'confirmed', message: 'Fictional kitchens notified. Delivery is simulated; payment is demo or Razorpay TEST.', timestamp: now }] };
     // Quote and order live in one MongoDB replica-set transaction. Unique idempotency index stops concurrent duplicates.
     const session = await mongoose.startSession();
     try {
@@ -119,26 +118,9 @@ function stopOrder(order, reason) {
         if (!['picked_up', 'rejected'].includes(leg.status))
             leg.status = 'cancelled';
 }
-// Compare-and-swap revision field prevents overlapping operations from silently
-// overwriting each other. The versionKey is deliberately disabled on these
-// schemas, so checking __v would not work. Support previously created orders
-// (before this revision field was introduced) without requiring a migration.
-async function persistTransition(original, mutated) {
-    const revision = original.revision;
-    const filter = { id: original.id, revision: orderRevisionConstraint(revision) };
-    const updated = await OrderModel.findOneAndUpdate(
-        filter,
-        {
-            $set: {
-                status: mutated.status,
-                legs: mutated.legs,
-                events: mutated.events,
-                failure_reason: mutated.failure_reason
-            },
-            $inc: { revision: 1 }
-        },
-        { new: true, runValidators: true }
-    ).lean();
+// Optimistic compare-and-swap: two overlapping operator actions cannot both silently succeed.
+async function persistTransition(old, mutated) {
+    const updated = await OrderModel.findOneAndUpdate({ id: old.id, __v: old.__v == null ? { $exists: false } : old.__v }, { $set: { status: mutated.status, legs: mutated.legs, events: mutated.events, failure_reason: mutated.failure_reason }, $inc: { __v: 1 } }, { new: true }).lean();
     if (!updated)
         throw new ApiError(409, 'Order was updated elsewhere. Refresh and retry.');
     return serializeOrder(updated);
@@ -148,7 +130,7 @@ export async function advanceOrder(id) {
     const next = NEXT_DEMO[original.status];
     if (!next || !transitionAllowed(original.status, next))
         throw new ApiError(409, 'Order cannot advance further');
-    const order = snapshotOrderForTransition(original);
+    const order = structuredClone(original);
     if (['ready_for_pickup', 'picked_up'].includes(next)) {
         const issue = await assessBeforePickup(original);
         if (issue) {
@@ -179,7 +161,7 @@ export async function cancelOrder(id) {
     const original = await findOrder(id);
     if (!transitionAllowed(original.status, 'cancelled'))
         throw new ApiError(409, 'Cancellation only possible before pickup');
-    const order = snapshotOrderForTransition(original);
+    const order = structuredClone(original);
     order.status = 'cancelled';
     for (const l of order.legs)
         if (!['picked_up', 'rejected'].includes(l.status))
@@ -191,7 +173,7 @@ export async function updateOrderLeg(id, restaurantId, status) {
     const original = await findOrder(id);
     if (['failed', 'delivered', 'cancelled'].includes(original.status))
         throw new ApiError(409, 'Order is terminal');
-    const order = snapshotOrderForTransition(original);
+    const order = structuredClone(original);
     const leg = order.legs.find(l => l.restaurant_id === restaurantId);
     if (!leg)
         throw new ApiError(404, 'Restaurant not in this order');

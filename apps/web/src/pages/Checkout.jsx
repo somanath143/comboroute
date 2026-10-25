@@ -2,10 +2,19 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Clock3, Info, MapPin, ShieldCheck, Truck, Route as RouteIcon } from 'lucide-react';
 import { useCart } from '../context/CartContext';
+import { useAuth } from '../context/AuthContext';
 import { api, getAddresses, getQuote, money } from '../lib';
 import { Loading, ErrorView, Empty } from '../components/UI';
+let razorpayScriptPromise;
+function loadRazorpay() {
+    if (window.Razorpay) return Promise.resolve();
+    if (!razorpayScriptPromise) razorpayScriptPromise = new Promise((resolve, reject) => { const script = document.createElement('script'); script.src = 'https://checkout.razorpay.com/v1/checkout.js'; script.onload = resolve; script.onerror = () => { razorpayScriptPromise = null; reject(new Error('Razorpay Checkout could not load. Check your connection.')); }; document.head.appendChild(script); });
+    return razorpayScriptPromise;
+}
 export function CheckoutPage() {
-    const cart = useCart(), navigate = useNavigate();
+    const cart = useCart(), navigate = useNavigate(), { user } = useAuth();
+    const [paymentMode, setPaymentMode] = useState('demo');
+    useEffect(() => { api('/config').then(c => setPaymentMode(c.payment_mode)).catch(() => {}); }, []);
     const [quote, setQuote] = useState(null), [loading, setLoading] = useState(true), [error, setError] = useState(''), [mode, setMode] = useState('separate'), [accepted, setAccepted] = useState(false), [note, setNote] = useState(''), [processing, setProcessing] = useState(false);
     const [addressLine, setAddressLine] = useState('');
     const key = useRef(crypto.randomUUID());
@@ -39,16 +48,39 @@ export function CheckoutPage() {
         }
         setProcessing(true);
         setError('');
+        let modalOpen = false;
         try {
-            const order = await api('/orders', { method: 'POST', body: JSON.stringify({ customer_id: 1, address_id: cart.addressId, items: cart.items, quote_id: quote.id, idempotency_key: key.current, mode, accepted_combo: accepted, note }) });
-            cart.clear();
-            navigate('/tracking/' + order.id);
+            const checkout = { address_id: cart.addressId, items: cart.items, quote_id: quote.id, idempotency_key: key.current, mode, accepted_combo: accepted, note };
+            if (paymentMode === 'razorpay_test') {
+                const intent = await api('/payments/create-intent', { method: 'POST', body: JSON.stringify(checkout) });
+                await loadRazorpay();
+                const instance = new window.Razorpay({
+                    key: intent.key_id, amount: intent.amount_paise, currency: 'INR', order_id: intent.razorpay_order_id,
+                    name: 'ComboRoute TEST', description: 'Fictional food delivery · Test payment only',
+                    prefill: { name: user?.name, email: user?.email },
+                    theme: { color: '#f26d42' },
+                    handler: async response => {
+                        try {
+                            const verified = await api('/payments/verify', { method: 'POST', body: JSON.stringify({ payment_intent_id: intent.id, ...response }) });
+                            cart.clear(); navigate('/tracking/' + verified.order_id);
+                        } catch (e) { setError(e.message + ' If payment was captured, do not retry until it is reconciled.'); }
+                        finally { setProcessing(false); }
+                    },
+                    modal: { ondismiss: () => setProcessing(false) }
+                });
+                instance.on('payment.failed', response => { setError(response.error?.description ?? 'Test payment failed'); setProcessing(false); });
+                instance.open();
+                modalOpen = true;
+                return;
+            }
+            const order = await api('/orders', { method: 'POST', body: JSON.stringify(checkout) });
+            cart.clear(); navigate('/tracking/' + order.id);
         }
         catch (e) {
             setError(e.message);
         }
         finally {
-            setProcessing(false);
+            if (!modalOpen) setProcessing(false);
         }
     }
     if (!cart.count)
@@ -63,5 +95,5 @@ export function CheckoutPage() {
  <aside className="panel p-6 lg:sticky lg:top-28"><p className="eyebrow">PRICE BREAKDOWN</p><h2 className="font-outfit text-2xl font-bold mt-3">Your final bill</h2><div className="mt-5 space-y-3 text-sm"><div className="bill-row"><span>Food ({cart.count} items)</span><strong>{money(quote.pricing.food_paise)}</strong></div><div className="bill-row"><span>Packaging</span><strong>{money(quote.pricing.packaging_paise)}</strong></div><div className="bill-row"><span>Illustrative food tax</span><strong>{money(quote.pricing.tax_paise)}</strong></div><div className="bill-row"><span>Delivery</span><strong>{money(quote.pricing[mode].delivery_paise)}</strong></div><div className="bill-row"><span>Platform fee</span><strong>{money(quote.pricing[mode].platform_paise)}</strong></div><div className="bill-row border-t pt-4 text-base text-ink"><span className="font-extrabold">Grand total</span><strong className="text-xl">{money(quote.pricing[mode].total_paise)}</strong></div></div>
  {mode === 'combined' && cart.restaurants.length > 1 && <label className="block mt-6 p-3 bg-peach rounded-xl text-sm"><input type="checkbox" className="accent-coral mr-2" checked={accepted} onChange={e => setAccepted(e.target.checked)}/> I accept the estimated combined pickup route and added delay.</label>}
  {error && <div role="alert" className="bg-red-50 text-red-800 rounded-xl p-3 mt-4 text-sm">{error}</div>}
- <button disabled={processing || mode === 'combined' && cart.restaurants.length > 1 && !accepted} className="btn-primary w-full justify-between mt-6" onClick={submit}>{processing ? 'Submitting your demo order…' : 'Place demo order'} <ArrowRight size={18}/></button><p className="text-center text-xs text-muted mt-3"><ShieldCheck size={13} className="inline mr-1"/> No real payment or partner dispatch</p><p className="text-xs text-muted mt-5">Quote valid until {new Date(quote.expires_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}. Price or kitchen changes require a new quote.</p></aside></div>}</div>;
+ <button disabled={processing || mode === 'combined' && cart.restaurants.length > 1 && !accepted} className="btn-primary w-full justify-between mt-6" onClick={submit}>{processing ? 'Processing checkout…' : paymentMode === 'razorpay_test' ? 'Pay securely (Razorpay TEST)' : 'Place demo order'} <ArrowRight size={18}/></button><p className="text-center text-xs text-muted mt-3"><ShieldCheck size={13} className="inline mr-1"/> {paymentMode === 'razorpay_test' ? 'Razorpay TEST keys only · no real money' : 'Demo order · no payment collected'}</p><p className="text-xs text-muted mt-5">Quote valid until {new Date(quote.expires_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}. Price or kitchen changes require a new quote.</p></aside></div>}</div>;
 }
