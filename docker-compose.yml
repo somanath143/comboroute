@@ -1,31 +1,53 @@
+
 services:
   mongo:
     image: mongo:7
     command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
-    volumes: ["mongo_data:/data/db"]
+    volumes:
+      - mongo_data:/data/db
     healthcheck:
       test: ["CMD-SHELL", "mongosh --quiet --eval 'try { rs.status().ok } catch(e) { rs.initiate({_id: \"rs0\", members: [{_id: 0, host: \"mongo:27017\"}]}); 1 }' | grep -q '1'"]
       interval: 10s
       timeout: 8s
       retries: 25
       start_period: 15s
+
   app:
     build: .
     depends_on:
-      mongo: { condition: service_healthy }
+      mongo:
+        condition: service_healthy
+
     environment:
+      # MongoDB
       MONGODB_URI: mongodb://mongo:27017/comboroute?replicaSet=rs0
+
+      # Server
       PORT: 3000
       NODE_ENV: production
       REQUIRE_DEMO_AUTH: "false"
-      PAYMENT_MODE: demo
+
+      # Razorpay Test Payments
+      PAYMENT_MODE: ${PAYMENT_MODE:-demo}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
+
+      # Admin account
       BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+
+      # Restaurant account
       BOOTSTRAP_RESTAURANT_EMAIL: ${BOOTSTRAP_RESTAURANT_EMAIL:-}
       BOOTSTRAP_RESTAURANT_PASSWORD: ${BOOTSTRAP_RESTAURANT_PASSWORD:-}
       BOOTSTRAP_RESTAURANT_RESTAURANT_IDS: ${BOOTSTRAP_RESTAURANT_RESTAURANT_IDS:-1}
+
+      # Delivery partner account
       BOOTSTRAP_PARTNER_EMAIL: ${BOOTSTRAP_PARTNER_EMAIL:-}
       BOOTSTRAP_PARTNER_PASSWORD: ${BOOTSTRAP_PARTNER_PASSWORD:-}
-    ports: ["3000:3000"]
+
+    ports:
+      - "3000:3000"
+
 volumes:
   mongo_data:
