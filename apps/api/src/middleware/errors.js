@@ -11,6 +11,9 @@ export const fail = (code, message) => { throw new ApiError(code, message); };
 export const asyncRoute = (fn) => (req, res, next) => { Promise.resolve(fn(req, res)).catch(next); };
 export const parse = (schema, value) => schema.parse(value);
 export function handleError(err, _req, res, _next) {
+    if (res.headersSent) return _next(err);
+    if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Malformed JSON body' });
+    if (err.type === 'entity.too.large') return res.status(413).json({ error: 'Request body too large' });
     if (err instanceof ApiError) {
         res.status(err.code).json({ error: err.message });
         return;

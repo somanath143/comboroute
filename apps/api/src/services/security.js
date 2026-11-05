@@ -15,7 +15,8 @@ export async function checkPassword(password, encoded) {
 }
 export const tokenHash = token => createHash('sha256').update(token).digest('hex');
 export function equalHex(a, b) {
-  if (typeof a !== 'string' || typeof b !== 'string' || !/^[a-f0-9]+$/i.test(a) || !/^[a-f0-9]+$/i.test(b)) return false;
+  // Buffer.from(hex) silently drops a dangling half-byte. Reject it before comparison.
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length || a.length % 2 !== 0 || !/^[a-f0-9]+$/i.test(a) || !/^[a-f0-9]+$/i.test(b)) return false;
   const x = Buffer.from(a, 'hex'), y = Buffer.from(b, 'hex');
   return x.length === y.length && timingSafeEqual(x, y);
 }

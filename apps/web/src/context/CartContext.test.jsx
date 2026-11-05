@@ -8,6 +8,15 @@ const item = (id, r) => ({ id, restaurant_id: r, name: 'Food ' + id, description
 function Probe() { const c = useCart(); return <><span data-testid="qty">{c.count}</span><span data-testid="total">{c.subtotal}</span><span role="alert">{c.error}</span><button onClick={() => c.add(item(1, 1))}>Add A</button><button onClick={() => c.add(item(2, 2))}>Add B</button><button onClick={() => c.add(item(3, 3))}>Add C</button><button onClick={() => c.remove(1)}>Remove A</button></>; }
 beforeEach(() => localStorage.clear());
 describe('cart persistence and boundaries', () => {
+    it('ignores malformed persisted items instead of rendering invalid React children', () => {
+        localStorage.setItem('comboroute_react_cart_v2', JSON.stringify({ lines: [null, { item: { ...item(1, 1), name: {} }, quantity: 1 }, { item: item(2, 2), quantity: 1 }], addressId: null }));
+        render(<CartProvider><Probe/></CartProvider>);
+        expect(screen.getByTestId('qty')).toHaveTextContent('1'); expect(screen.getByTestId('total')).toHaveTextContent('18900');
+    });
+    it('normalizes duplicate lines and caps restored baskets at twelve portions', () => {
+        localStorage.setItem('comboroute_react_cart_v2', JSON.stringify({ lines: [{ item: item(1, 1), quantity: 8 }, { item: item(1, 1), quantity: 8 }, { item: item(2, 2), quantity: 1 }] }));
+        render(<CartProvider><Probe/></CartProvider>); expect(screen.getByTestId('qty')).toHaveTextContent('12');
+    });
     it('adds and removes correctly', () => { render(<CartProvider><Probe /></CartProvider>); fireEvent.click(screen.getByText('Add A')); expect(screen.getByTestId('qty')).toHaveTextContent('1'); expect(screen.getByTestId('total')).toHaveTextContent('18900'); fireEvent.click(screen.getByText('Remove A')); expect(screen.getByTestId('qty')).toHaveTextContent('0'); });
     it('rejects a third kitchen', () => { render(<CartProvider><Probe /></CartProvider>); fireEvent.click(screen.getByText('Add A')); fireEvent.click(screen.getByText('Add B')); fireEvent.click(screen.getByText('Add C')); expect(screen.getByTestId('qty')).toHaveTextContent('2'); expect(screen.getByRole('alert')).toHaveTextContent('maximum of two restaurants'); });
 });

@@ -1,0 +1,75 @@
+{
+  "timestamp": "2026-11-05T12:37:25.786Z",
+  "rows": 10000,
+  "database": "comboroute_benchmark_25e9fe604c704a0291924e3c6bb6f368",
+  "baseline": {
+    "returned": 25,
+    "documents_examined": 10000,
+    "keys_examined": 0,
+    "execution_ms": 4,
+    "winning_plan": {
+      "stage": "SORT",
+      "sortPattern": {
+        "createdAt": -1,
+        "id": -1
+      },
+      "memLimit": 104857600,
+      "limitAmount": 25,
+      "type": "simple",
+      "inputStage": {
+        "stage": "COLLSCAN",
+        "filter": {
+          "customer_id": {
+            "$eq": 42
+          }
+        },
+        "direction": "forward"
+      }
+    }
+  },
+  "indexed": {
+    "returned": 25,
+    "documents_examined": 25,
+    "keys_examined": 25,
+    "execution_ms": 0,
+    "winning_plan": {
+      "stage": "LIMIT",
+      "limitAmount": 25,
+      "inputStage": {
+        "stage": "FETCH",
+        "inputStage": {
+          "stage": "IXSCAN",
+          "keyPattern": {
+            "customer_id": 1,
+            "createdAt": -1,
+            "id": -1
+          },
+          "indexName": "customer_id_1_createdAt_-1_id_-1",
+          "isMultiKey": false,
+          "multiKeyPaths": {
+            "customer_id": [],
+            "createdAt": [],
+            "id": []
+          },
+          "isUnique": false,
+          "isSparse": false,
+          "isPartial": false,
+          "indexVersion": 2,
+          "direction": "forward",
+          "indexBounds": {
+            "customer_id": [
+              "[42, 42]"
+            ],
+            "createdAt": [
+              "[MaxKey, MinKey]"
+            ],
+            "id": [
+              "[MaxKey, MinKey]"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "scope": "Single explain execution per plan; timings are diagnostic, not statistically significant latency measurements"
+}

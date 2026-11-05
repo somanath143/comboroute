@@ -20,7 +20,8 @@ export const UserModel = model('AppUser', new Schema({
   role: { type: String, required: true, enum: ['customer', 'restaurant', 'partner', 'admin'], default: 'customer' },
   customer_id: { type: Number, unique: true, sparse: true },
   restaurant_ids: { type: [Number], default: [] },
-  disabled: { type: Boolean, default: false }
+  disabled: { type: Boolean, default: false },
+  email_verified_at: Date
 }, c));
 export const SessionModel = model('AppSession', new Schema({
   token_hash: { type: String, required: true, unique: true },
@@ -46,5 +47,20 @@ export const PaymentModel = model('PaymentIntent', new Schema({
 export const WebhookEventModel = model('WebhookEvent', new Schema({
   event_id: { type: String, required: true, unique: true },
   event_type: String,
+  payload: Schema.Types.Mixed,
+  status: { type: String, default: 'pending' },
   processed_at: Date
 }, c));
+
+MenuModel.schema.add({ stock_available: { type: Number, default: 100, min: 0, validate: Number.isInteger } });
+OrderModel.schema.add({ address_snapshot: Schema.Types.Mixed, reservation_id: String, assignment_expires_at: Date });
+PaymentModel.schema.add({ reservation_id: String, reconcile_after: Date, refund_attempt: { type: Number, default: 0 }, refund_receipt: String });
+OrderModel.schema.index({ customer_id: 1, createdAt: -1, id: -1 });
+OrderModel.schema.index({ status: 1, delivery_partner_id: 1, createdAt: 1 });
+OrderModel.schema.index({ delivery_partner_id: 1, status: 1, createdAt: -1 });
+PaymentModel.schema.index({ status: 1, reconcile_after: 1 });
+PaymentModel.schema.index({ customer_id: 1, createdAt: -1, id: -1 });
+UserModel.schema.index({ createdAt: -1, _id: -1 });
+RestaurantModel.schema.index({ is_open: -1, rating: -1, ratings_count: -1, id: 1 });
+RestaurantModel.schema.index({ prep_minutes: 1, id: 1 });
+MenuModel.schema.index({ restaurant_id: 1, category: 1, popular: -1, id: 1 });

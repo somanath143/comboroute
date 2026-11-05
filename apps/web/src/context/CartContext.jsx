@@ -1,10 +1,24 @@
 import { createContext, useContext, useMemo, useState } from 'react';
 const Context = createContext(null);
 const KEY = 'comboroute_react_cart_v2';
+function validItem(item) {
+    return item && Number.isSafeInteger(item.id) && item.id > 0 && Number.isSafeInteger(item.restaurant_id) && item.restaurant_id > 0
+        && typeof item.name === 'string' && item.name.length > 0 && Number.isSafeInteger(item.price_paise) && item.price_paise >= 0;
+}
 function load() {
     try {
         const d = JSON.parse(localStorage.getItem(KEY) || '{}');
-        return { lines: Array.isArray(d.lines) ? d.lines.filter((x) => x.item && Number.isInteger(x.quantity) && x.quantity > 0) : [], addressId: Number.isInteger(d.addressId) && d.addressId > 0 ? d.addressId : 1 };
+        const lines = [], restaurants = new Set(); let total = 0;
+        for (const line of Array.isArray(d?.lines) ? d.lines : []) {
+            if (!line || !validItem(line.item) || !Number.isSafeInteger(line.quantity) || line.quantity < 1 || total >= 12) continue;
+            if (!restaurants.has(line.item.restaurant_id) && restaurants.size >= 2) continue;
+            const existing = lines.find(x => x.item.id === line.item.id);
+            if (existing && existing.item.restaurant_id !== line.item.restaurant_id) continue;
+            const quantity = Math.min(line.quantity, 12 - total);
+            if (existing) existing.quantity += quantity; else lines.push({ item: line.item, quantity });
+            restaurants.add(line.item.restaurant_id); total += quantity;
+        }
+        return { lines, addressId: Number.isSafeInteger(d?.addressId) && d.addressId > 0 ? d.addressId : 1 };
     }
     catch {
         return { lines: [], addressId: 1 };
@@ -20,6 +34,7 @@ export function CartProvider({ children }) {
     }
     catch { /* private browsing still supports in-memory state */ } }
     function add(item) {
+        if (!validItem(item)) { setError('This item could not be added. Refresh the menu and try again.'); return; }
         setLines(previous => {
             const ids = new Set(previous.map(l => l.item.restaurant_id));
             if (!ids.has(item.restaurant_id) && ids.size >= 2) {

@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
 import { AddressModel, RestaurantModel, MenuModel } from '../models/index.js';
 import { ApiError } from '../middleware/errors.js';
-export async function normalizedBasket(customerId, addressId, items) {
-    const address = await AddressModel.findOne({ id: addressId, customer_id: customerId }).lean();
+export async function normalizedBasket(customerId, addressId, items, { session } = {}) {
+    const address = await AddressModel.findOne({ id: addressId, customer_id: customerId }).session(session ?? null).lean();
     if (!address)
         throw new ApiError(404, 'Delivery address not found');
-    const menu = await MenuModel.find({ id: { $in: items.map(i => i.menu_item_id) } }).lean();
+    const menu = await MenuModel.find({ id: { $in: items.map(i => i.menu_item_id) } }).session(session ?? null).lean();
     const lookup = new Map(menu.map(m => [m.id, m]));
     if (lookup.size !== items.length)
         throw new ApiError(404, 'One or more menu items were not found');
@@ -14,7 +14,7 @@ export async function normalizedBasket(customerId, addressId, items) {
     const ids = [...new Set(canonical.map(i => i.restaurant_id))];
     if (ids.length > 2)
         throw new ApiError(422, 'Only two restaurants can share a basket');
-    const found = await RestaurantModel.find({ id: { $in: ids } }).lean();
+    const found = await RestaurantModel.find({ id: { $in: ids } }).session(session ?? null).lean();
     const rests = ids.map(id => found.find(r => r.id === id));
     if (rests.some(r => !r))
         throw new ApiError(404, 'Restaurant not found');

@@ -2,11 +2,14 @@
 
 All URLs are relative to `/api`. Authenticated endpoints use the `cr_session` HttpOnly cookie. Staff access is checked server-side. Mutations enforce same-origin requests when an `Origin` header is present.
 
+Public signup now returns HTTP 202 and emails an OTP instead of creating an account immediately. `POST /auth/register/verify` creates the account after verification; `POST /auth/register/resend` sends a fresh code after cooldown. See [email verification setup and API details](EMAIL_VERIFICATION.md).
+
 | Method | Route | Access |
 |---|---|---|
 | GET | `/health`, `/config`, `/restaurants`, `/restaurants/:id` | Public |
 | GET | `/combos/candidates?primary_id=&address_id=` | Public for seed address 1, customer-owned otherwise |
 | POST | `/auth/register`, `/auth/login` | Public; rate-limited |
+| POST | `/auth/register/resend`, `/auth/register/verify` | Public; challenge/OTP and rate limits required |
 | GET | `/auth/me` | Public (returns user or null) |
 | POST | `/auth/logout` | Authenticated |
 | GET | `/addresses` | Customer |

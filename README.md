@@ -6,9 +6,11 @@
 
 ## What's included
 
+The six backend additions—inventory reservations, payment reconciliation, durable jobs, delivery leases, database optimisation and observability—are implemented. See [backend feature documentation](docs/BACKEND_FEATURES.md) for behavior, operating instructions, APIs and reproducible benchmarks.
+
 | Capability | Implementation |
 |---|---|
-| Customer sign-up and sign-in | Email/password, salted `scrypt` hashes, server-side sessions, HttpOnly/Secure/SameSite cookies, login rate limits |
+| Customer sign-up and sign-in | Email OTP before account creation, salted `scrypt` password hashes, server-side sessions, HttpOnly/Secure/SameSite cookies, login/OTP rate limits |
 | Role-based access control | Customer, restaurant, delivery partner, administrator; checked on API endpoints and UI routes |
 | Customer isolation | Separate MongoDB customer IDs and addresses; customer-owned quotes, orders and payments |
 | Restaurant dashboard | Assigned restaurant(s) only; manage availability, prices, preparation and order legs |
@@ -28,14 +30,20 @@ Requires Node 22+, npm 10+, and a MongoDB replica set (Atlas or Docker Compose).
 ```bash
 cp .env.example .env   # On Windows, copy the file manually or use: copy .env.example .env
 # Set MONGODB_URI in .env to a valid Atlas connection string
-npm install
+npm ci
 npm run build
 npm run dev
 ```
 
 Open `http://localhost:5173`, register a new customer at `/signup`, and explore the nine seeded restaurants. To use the single-container build, run `npm run build && npm start`, then visit `http://localhost:3000`.
 
+**New customer signup requires an emailed OTP.** Configure SMTP or Brevo HTTPS email and `EMAIL_OTP_SECRET` using [email verification setup](docs/EMAIL_VERIFICATION.md). Missing/fake email credentials cannot create new accounts; existing accounts still sign in normally. Render Free blocks common SMTP ports, so its blueprint selects Brevo HTTPS email. Local Gmail SMTP remains supported.
+
+If you already run the project with Docker Compose, update it with `docker compose up -d --build app` and open `http://localhost:3000`. Do not also run `npm start`: the Docker app already uses port 3000, and its MongoDB is accessible inside Docker as `mongo:27017`, not on Windows at `localhost:27017`. Running Node directly requires a separately reachable MongoDB replica set configured in `.env`.
+
 Default payment mode is `demo`: no payment gateway is called. Razorpay TEST is opt-in with the required environment variables.
+
+For payment failures and configuration, see [Payment debugging](docs/PAYMENT_DEBUGGING.md). Fake credentials cannot process Razorpay test transactions. For suggested internship-focused improvements, see [Backend roadmap](docs/BACKEND_ROADMAP.md).
 
 ## Deploy on Render
 
@@ -47,9 +55,11 @@ Quick outline:
 2. Deploy a Docker web service on Render (`Dockerfile` at repository root).
 3. Set `MONGODB_URI`, `NODE_ENV=production`, `REQUIRE_DEMO_AUTH=false`, `PAYMENT_MODE=demo`.
 4. Set `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` to create the initial admin account.
-5. Redeploy; verify `/api/health` and search `/api/restaurants?q=pizza`.
+5. Configure `EMAIL_OTP_SECRET`, `MAIL_FROM` and the email provider credentials (`EMAIL_PROVIDER=brevo` and `BREVO_API_KEY` for the Free blueprint). Redeploy; verify `/api/health` and search `/api/restaurants?q=pizza`.
 6. Create a customer at `/signup`. Restaurant and partner accounts can be bootstrapped through environment variables or assigned by admin.
 7. Only after demo flows work, optionally enable Razorpay **test** mode and configure its webhook.
+
+Read the latest [verification results](TEST_RESULTS.md). Free services sleep when idle, so MongoDB-backed jobs resume on wake; use an always-on service when processing must continue unattended.
 
 ## Structure
 

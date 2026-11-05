@@ -1,4 +1,12 @@
 export const money = (paise) => '₹' + (paise / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+// randomUUID requires HTTPS in browsers; local LAN previews may use HTTP.
+export function checkoutKey() {
+    if (globalThis.crypto.randomUUID) return globalThis.crypto.randomUUID();
+    const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40; bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 export const image = (key) => `/assets/${encodeURIComponent(key || 'biryani')}.webp`;
 export async function api(path, options = {}) {
     let response;
@@ -8,7 +16,10 @@ export async function api(path, options = {}) {
     catch {
         throw new Error('Cannot connect to ComboRoute API. Check the backend server.');
     }
-    const data = await response.json().catch(() => ({ error: 'Unexpected response from server' }));
+    let data;
+    try { data = await response.json(); }
+    catch { throw new Error('Unexpected response from server. Please retry once the service is ready.'); }
+    if (data === null || typeof data !== 'object') throw new Error('Unexpected response from server. Please retry.');
     if (!response.ok)
         throw new Error(data.error ?? `Request failed (${response.status})`);
     return data;

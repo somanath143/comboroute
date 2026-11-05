@@ -14,12 +14,18 @@ import {
   AddressModel,
   RestaurantModel,
   OrderModel,
+  PaymentModel,
   QuoteModel,
   isMongoDuplicate
 } from '../models/index.js';
 
 import { ApiError } from '../middleware/errors.js';
 import { basketHash, normalizedBasket } from './catalog.js';
+import { ReservationModel, AssignmentModel } from '../models/operations.js';
+import { reserveInventory, commitReservation, releaseReservationInSession } from './inventory.js';
+import { enqueue } from './jobs.js';
+import { audit } from './audit.js';
+import { finishAssignment } from './assignment-lifecycle.js';
 
 export async function quoteBasket(input) {
   const { address, canonical, restaurants } = await normalizedBasket(
@@ -69,12 +75,12 @@ export async function quoteBasket(input) {
   };
 }
 
-export async function serializeOrder(order) {
-  const address = await AddressModel.findOne({
+export async function serializeOrder(order, context = {}) {
+  const address = order.address_snapshot ?? (context.addresses ? context.addresses.get(order.address_id) : await AddressModel.findOne({
     id: order.address_id
-  }).lean();
+  }).lean());
 
-  const rests = await RestaurantModel.find({
+  const rests = context.restaurants ?? await RestaurantModel.find({
     id: {
       $in: order.legs.map(l => l.restaurant_id)
     }
@@ -122,6 +128,15 @@ export async function serializeOrder(order) {
   };
 }
 
+export async function serializeOrders(orders) {
+  const [addresses, restaurants] = await Promise.all([
+    AddressModel.find({ id: { $in: orders.filter(o => !o.address_snapshot).map(o => o.address_id) } }).lean(),
+    RestaurantModel.find({ id: { $in: [...new Set(orders.flatMap(o => o.legs.map(l => l.restaurant_id)))] } }).lean()
+  ]);
+  const context = { addresses: new Map(addresses.map(a => [a.id, a])), restaurants };
+  return Promise.all(orders.map(o => serializeOrder(o, context)));
+}
+
 async function matchingExisting(input) {
   const prior = await OrderModel.findOne({
     idempotency_key: input.idempotency_key
@@ -136,6 +151,7 @@ async function matchingExisting(input) {
     prior.address_id !== input.address_id ||
     prior.mode !== input.mode ||
     prior.quote_id !== input.quote_id ||
+    prior.note !== input.note ||
     prior.fingerprint !== basketHash(
       input.items,
       input.address_id
@@ -150,18 +166,12 @@ async function matchingExisting(input) {
   return serializeOrder(prior);
 }
 
-export async function createOrder(input) {
-  const previous = await matchingExisting(input);
-
-  if (previous) {
-    return previous;
-  }
-
+export async function validateCheckout(input, { session } = {}) {
   const quote = await QuoteModel.findOne({
     id: input.quote_id,
     customer_id: input.customer_id,
     address_id: input.address_id
-  }).lean();
+  }).session(session ?? null).lean();
 
   if (!quote) {
     throw new ApiError(404, 'Valid quote not found');
@@ -202,7 +212,7 @@ export async function createOrder(input) {
   } = await normalizedBasket(
     input.customer_id,
     input.address_id,
-    input.items
+    input.items, { session }
   );
 
   if (
@@ -264,139 +274,65 @@ export async function createOrder(input) {
     );
   }
 
+  return { quote, canonical, restaurants, route, pricing, address };
+}
+
+export function checkoutSnapshot(data) {
+  return { quote: { id: data.quote.id, fingerprint: data.quote.fingerprint }, canonical: data.canonical,
+    restaurants: data.restaurants.map(r => ({ id: r.id, name: r.name, prep_minutes: r.prep_minutes })),
+    route: data.route, pricing: data.pricing,
+    address: { id: data.address.id, label: data.address.label, line: data.address.line, coordinates: data.address.coordinates } };
+}
+
+export async function createOrder(input, { paymentIntent, actor } = {}) {
+  const previous = await matchingExisting(input);
+  if (previous) {
+    if (paymentIntent && !await OrderModel.exists({ id: previous.id, payment_id: paymentIntent.id })) throw new ApiError(409, 'Checkout key already belongs to another order');
+    return previous;
+  }
   const id = randomUUID();
-  const now = new Date().toISOString();
-
-  const doc = {
-    id,
-    short_code:
-      'CR' +
-      id.replaceAll('-', '').slice(0, 8).toUpperCase(),
-
-    customer_id: input.customer_id,
-    address_id: input.address_id,
-    quote_id: quote.id,
-    idempotency_key: input.idempotency_key,
-    fingerprint: quote.fingerprint,
-    mode: input.mode,
-    status: 'confirmed',
-    total_paise: pricing[input.mode].total_paise,
-    pricing,
-    routing: route,
-    note: input.note,
-    failure_reason: null,
-    items: canonical,
-
-    legs: restaurants.map(r => ({
-      restaurant_id: r.id,
-      status: 'pending',
-      eta_minutes: r.prep_minutes
-    })),
-
-    events: [
-      {
-        status: 'created',
-        message: 'Order created and priced on the server.',
-        timestamp: now
-      },
-      {
-        status: 'confirmed',
-        message:
-          'Fictional kitchens notified. Delivery is simulated; payment is demo or Razorpay TEST.',
-        timestamp: now
-      }
-    ]
-  };
-
-  // Transaction protects order creation and idempotency.
-  const session = await mongoose.startSession();
-
   try {
-    await session.withTransaction(async () => {
-      const fresh = await QuoteModel.findOne({
-        id: quote.id
-      }).session(session).lean();
-
-      if (
-        !fresh ||
-        new Date(fresh.expires_at).getTime() <= Date.now()
-      ) {
-        throw new ApiError(
-          409,
-          'Quote has expired'
-        );
+    await mongoose.connection.transaction(async session => {
+      const reservationId = paymentIntent?.reservation_id ?? 'demo:' + input.idempotency_key;
+      let snapshot;
+      if (paymentIntent?.reservation_id) {
+        const reserved = await ReservationModel.findOne({ id: reservationId, customer_id: input.customer_id, status: 'reserved', expires_at: { $gt: new Date() } }).session(session).lean();
+        if (!reserved) throw new ApiError(409, 'Payment reservation expired; payment will be refunded');
+        snapshot = reserved.snapshot;
+      } else {
+        snapshot = checkoutSnapshot(await validateCheckout(input, { session }));
+        await reserveInventory(reservationId, input.customer_id, input.items, snapshot, session);
       }
-
-      const latest = await normalizedBasket(
-        input.customer_id,
-        input.address_id,
-        input.items
-      );
-
-      const newRoute = evaluateRoutes(
-        latest.restaurants,
-        latest.address.coordinates,
-        latest.canonical.reduce(
-          (n, i) => n + i.quantity,
-          0
-        )
-      );
-
-      const newPricing = calculatePricing(
-        latest.restaurants,
-        latest.canonical,
-        latest.address.coordinates,
-        newRoute
-      );
-
-      if (
-        JSON.stringify(newPricing) !==
-          JSON.stringify(pricing) ||
-        JSON.stringify(newRoute) !==
-          JSON.stringify(route)
-      ) {
-        throw new ApiError(
-          409,
-          'Quote is stale. Recalculate and retry.'
-        );
+      const now = new Date().toISOString();
+      const doc = {
+        id, short_code: 'CR' + id.replaceAll('-', '').slice(0, 8).toUpperCase(),
+        customer_id: input.customer_id, address_id: input.address_id, address_snapshot: snapshot.address,
+        quote_id: snapshot.quote.id, idempotency_key: input.idempotency_key, fingerprint: snapshot.quote.fingerprint,
+        mode: input.mode, status: 'confirmed', reservation_id: reservationId,
+        ...(paymentIntent ? { payment_id: paymentIntent.id, payment_status: 'paid' } : {}),
+        total_paise: snapshot.pricing[input.mode].total_paise, pricing: snapshot.pricing, routing: snapshot.route,
+        note: input.note, failure_reason: null, items: snapshot.canonical,
+        legs: snapshot.restaurants.map(r => ({ restaurant_id: r.id, status: 'pending', eta_minutes: r.prep_minutes })),
+        events: [{ status: 'created', message: 'Order priced on the server; inventory reserved.', timestamp: now },
+          { status: 'confirmed', message: 'Inventory committed. Delivery is simulated; payment is demo or Razorpay TEST.', timestamp: now }]
+      };
+      await commitReservation(reservationId, id, session);
+      await OrderModel.create([doc], { session });
+      if (paymentIntent) {
+        const linked = await PaymentModel.updateOne({ id: paymentIntent.id, status: 'captured', order_id: { $exists: false }, amount_paise: doc.total_paise },
+          { $set: { order_id: id, status: 'paid' } }, { session });
+        if (linked.modifiedCount !== 1) throw new ApiError(409, 'Payment was updated elsewhere; check its status');
       }
-
-      await OrderModel.create(
-        [doc],
-        { session }
-      );
+      await enqueue('notification.order', { order_id: id, customer_id: input.customer_id, status: 'confirmed' }, { key: `notification:${id}:confirmed`, session, requestId: actor?.request_id });
+      await audit('order.created', id, actor ?? { id: String(input.customer_id), role: 'customer' }, { status: 'confirmed' }, session);
     });
   } catch (error) {
-    if (isMongoDuplicate(error)) {
-      const duplicate = await matchingExisting(input);
-
-      if (duplicate) {
-        return duplicate;
-      }
-
-      throw new ApiError(
-        409,
-        'Duplicate or conflicting order'
-      );
-    }
-
+    const duplicate = await matchingExisting(input);
+    if (duplicate && (!paymentIntent || await OrderModel.exists({ id: duplicate.id, payment_id: paymentIntent.id }))) return duplicate;
+    if (isMongoDuplicate(error)) throw new ApiError(409, 'Duplicate or conflicting order');
     throw error;
-  } finally {
-    await session.endSession();
   }
-
-  const stored = await OrderModel.findOne({
-    id
-  }).lean();
-
-  if (!stored) {
-    throw new ApiError(
-      503,
-      'Order temporarily unavailable'
-    );
-  }
-
-  return serializeOrder(stored);
+  return serializeOrder(await findOrder(id));
 }
 
 export async function findOrder(id) {
@@ -441,7 +377,7 @@ async function assessBeforePickup(order) {
     }
   }).lean();
 
-  const address = await AddressModel.findOne({
+  const address = order.address_snapshot ?? await AddressModel.findOne({
     id: order.address_id
   }).lean();
 
@@ -536,59 +472,37 @@ function copyOrderForTransition(order) {
  * Prevent overlapping operator actions from silently
  * overwriting one another.
  */
-async function persistTransition(original, mutated) {
-  const updated = await OrderModel.findOneAndUpdate(
-    {
-      id: original.id,
-
-      __v:
-        original.__v == null
-          ? { $exists: false }
-          : original.__v
-    },
-
-    {
-      $set: {
-        status: mutated.status,
-
-        legs: mutated.legs.map(leg => ({
-          restaurant_id: leg.restaurant_id,
-          status: leg.status,
-          eta_minutes: leg.eta_minutes
-        })),
-
-        events: mutated.events.map(entry => ({
-          status: entry.status,
-          message: entry.message,
-          timestamp: entry.timestamp
-        })),
-
-        failure_reason:
-          mutated.failure_reason ?? null
-      },
-
-      $inc: {
-        __v: 1
-      }
-    },
-
-    {
-      new: true,
-      runValidators: true
+async function persistTransition(original, mutated, actor) {
+  let updated;
+  await mongoose.connection.transaction(async session => {
+    updated = await OrderModel.findOneAndUpdate({ id: original.id,
+      __v: original.__v == null ? { $exists: false } : original.__v },
+      { $set: { status: mutated.status, legs: mutated.legs, events: mutated.events, failure_reason: mutated.failure_reason ?? null }, $inc: { __v: 1 } },
+      { new: true, runValidators: true, session }).lean();
+    if (!updated) throw new ApiError(409, 'Order was updated elsewhere. Refresh and retry.');
+    if (updated.status === 'ready_for_pickup' && original.status !== 'ready_for_pickup') {
+      await enqueue('delivery.assign', { order_id: original.id }, { key: `delivery.assign:${original.id}`, session });
     }
-  ).lean();
-
-  if (!updated) {
-    throw new ApiError(
-      409,
-      'Order was updated elsewhere. Refresh and retry.'
-    );
-  }
-
+    if (actor?.role === 'partner' && mutated.legs.some((leg, i) => leg.status === 'picked_up' && original.legs[i]?.status !== 'picked_up')) {
+      const lease = await AssignmentModel.updateOne({ order_id: original.id, partner_id: actor.id, $or: [{ status: 'active', expires_at: { $gt: new Date() } }, { status: 'picked_up' }] }, { $set: { status: 'picked_up' } }, { session });
+      if (!lease.matchedCount) throw new ApiError(409, 'Delivery assignment expired before pickup');
+    }
+    if (['cancelled', 'failed', 'delivered'].includes(updated.status)) {
+      await finishAssignment(original.id, session);
+      // Portions already being prepared are not returned to sellable stock.
+      if (['created', 'confirmed'].includes(original.status) && original.reservation_id && updated.status !== 'delivered') {
+        await releaseReservationInSession(original.reservation_id, updated.status, session, { committed: true });
+      }
+      if (updated.status !== 'delivered' && original.payment_id) await enqueue('payment.refund', { payment_id: original.payment_id }, { key: `refund:${original.payment_id}`, session });
+    }
+    await enqueue('notification.order', { order_id: original.id, customer_id: original.customer_id, status: updated.status },
+      { key: `notification:${original.id}:${updated.status}`, session });
+    await audit('order.transition', original.id, actor, { from: original.status, to: updated.status }, session);
+  });
   return serializeOrder(updated);
 }
 
-export async function advanceOrder(id) {
+export async function advanceOrder(id, actor) {
   const original = await findOrder(id);
 
   const next = NEXT_DEMO[original.status];
@@ -612,7 +526,7 @@ export async function advanceOrder(id) {
 
     if (issue) {
       stopOrder(order, issue);
-      return persistTransition(original, order);
+      return persistTransition(original, order, actor);
     }
   }
 
@@ -672,10 +586,10 @@ export async function advanceOrder(id) {
     )
   );
 
-  return persistTransition(original, order);
+  return persistTransition(original, order, actor);
 }
 
-export async function cancelOrder(id) {
+export async function cancelOrder(id, actor) {
   const original = await findOrder(id);
 
   if (
@@ -705,17 +619,17 @@ export async function cancelOrder(id) {
   order.events.push(
     event(
       'cancelled',
-      'Customer cancelled the demo order; no real payment or refund.'
+      'Customer cancelled the order. Any captured TEST payment is submitted for refund.'
     )
   );
 
-  return persistTransition(original, order);
+  return persistTransition(original, order, actor);
 }
 
 export async function updateOrderLeg(
   id,
   restaurantId,
-  status
+  status, actor
 ) {
   const original = await findOrder(id);
 
@@ -848,5 +762,5 @@ export async function updateOrderLeg(
     }
   }
 
-  return persistTransition(original, order);
+  return persistTransition(original, order, actor);
 }

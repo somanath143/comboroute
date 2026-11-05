@@ -1,3 +1,4 @@
+import { registerVerified } from '../tests/helpers/signup.js';
 import { beforeAll, afterAll, describe, it, expect } from 'vitest';
 import request from 'supertest';
 import mongoose from 'mongoose';
@@ -11,14 +12,14 @@ const group = process.env.TEST_MONGODB_URI ? describe : describe.skip;
 group('authenticated ComboRoute HTTP integration', () => {
   let customer, other, kitchen, partner, admin, customerId, addressId;
   beforeAll(async () => {
-    await mongoose.connect(process.env.TEST_MONGODB_URI, { dbName: 'comboroute_test_' + randomUUID().replaceAll('-', '') });
+    await mongoose.connect(process.env.TEST_MONGODB_URI, { dbName: 'comboroute_test_' + randomUUID().replaceAll('-', ''), serverSelectionTimeoutMS: 5000 });
     await seedDatabase();
     customer = request.agent(app); other = request.agent(app); kitchen = request.agent(app); partner = request.agent(app); admin = request.agent(app);
-    const signup = await customer.post('/api/auth/register').send({ name: 'First Customer', email: 'first@example.test', password: 'a-long-password-12345' });
+    const signup = await registerVerified(customer, { name: 'First Customer', email: 'first@example.test', password: 'a-long-password-12345' });
     expect(signup.status).toBe(201);
     customerId = signup.body.user.customer_id;
     const addresses = await customer.get('/api/addresses'); addressId = addresses.body[0].id;
-    await other.post('/api/auth/register').send({ name: 'Other Customer', email: 'other@example.test', password: 'a-long-password-67890' });
+    await registerVerified(other, { name: 'Other Customer', email: 'other@example.test', password: 'a-long-password-67890' });
     await UserModel.create({ email: 'kitchen@example.test', name: 'Kitchen', role: 'restaurant', restaurant_ids: [1], password_hash: await hashPassword('restaurant-password-123') });
     await UserModel.create({ email: 'partner@example.test', name: 'Partner', role: 'partner', password_hash: await hashPassword('partner-password-123') });
     await UserModel.create({ email: 'admin@example.test', name: 'Admin', role: 'admin', password_hash: await hashPassword('admin-password-123') });
@@ -26,7 +27,7 @@ group('authenticated ComboRoute HTTP integration', () => {
     await partner.post('/api/auth/login').send({ email: 'partner@example.test', password: 'partner-password-123' });
     await admin.post('/api/auth/login').send({ email: 'admin@example.test', password: 'admin-password-123' });
   });
-  afterAll(async () => { await mongoose.connection.dropDatabase(); await mongoose.disconnect(); });
+  afterAll(async () => { if (mongoose.connection.readyState === 1) await mongoose.connection.dropDatabase(); await mongoose.disconnect(); });
   const basket = () => ({ address_id: addressId, items: [{ menu_item_id: 1, quantity: 1 }, { menu_item_id: 7, quantity: 1 }] });
   it('returns seeded restaurants and searchable menu items', async () => {
     const restaurants = await request(app).get('/api/restaurants'); expect(restaurants.status).toBe(200); expect(restaurants.body).toHaveLength(9);
@@ -91,5 +92,15 @@ group('authenticated ComboRoute HTTP integration', () => {
   it('exposes admin summary only to admin accounts', async () => {
     expect((await customer.get('/api/admin/summary')).status).toBe(403);
     expect((await admin.get('/api/admin/summary')).status).toBe(200);
+  });
+  it('provisions a customer identity and address when admin changes a staff role', async () => {
+    const user = await UserModel.create({ email: 'converted@example.test', name: 'Converted Staff', role: 'partner', password_hash: await hashPassword('converted-password-123') });
+    const changed = await admin.patch('/api/admin/users/' + user._id).send({ role: 'customer' });
+    expect(changed.status).toBe(200); expect(changed.body.customer_id).toBeGreaterThan(0);
+    const converted = request.agent(app);
+    expect((await converted.post('/api/auth/login').send({ email: user.email, password: 'converted-password-123' })).status).toBe(200);
+    const addresses = await converted.get('/api/addresses');
+    expect(addresses.body).toHaveLength(1);
+    expect((await converted.post('/api/quotes').send({ address_id: addresses.body[0].id, items: [{ menu_item_id: 1, quantity: 1 }] })).status).toBe(201);
   });
 });

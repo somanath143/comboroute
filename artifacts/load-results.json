@@ -1,0 +1,21 @@
+{
+  "timestamp": "2026-11-05T12:37:22.901Z",
+  "node": "v24.19.0",
+  "platform": "win32",
+  "cpu": "13th Gen Intel(R) Core(TM) i7-13650HX",
+  "memory_gb": 16,
+  "base": "http://127.0.0.1:3109",
+  "requests": 100,
+  "concurrency": 10,
+  "duration_seconds": 0.1391912,
+  "requests_per_second": 718.4362229796137,
+  "p50_ms": 12.66,
+  "p95_ms": 19.87,
+  "p99_ms": 21.14,
+  "errors": 0,
+  "statuses": {
+    "200": 100
+  },
+  "cache_hits": 34,
+  "scope": "Read-only HTTP catalog/detail/health smoke load; not a payment or capacity benchmark"
+}

@@ -26,6 +26,20 @@ services:
       PORT: 3000
       NODE_ENV: production
       REQUIRE_DEMO_AUTH: "false"
+      WORKER_ENABLED: ${WORKER_ENABLED:-true}
+      RESERVATION_TTL_MS: ${RESERVATION_TTL_MS:-600000}
+      ASSIGNMENT_LEASE_MS: ${ASSIGNMENT_LEASE_MS:-300000}
+      # Email OTP signup: supply real SMTP credentials privately in .env.
+      EMAIL_OTP_SECRET: ${EMAIL_OTP_SECRET:-}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
+      BREVO_API_KEY: ${BREVO_API_KEY:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_ALLOW_INSECURE_LOCAL: ${SMTP_ALLOW_INSECURE_LOCAL:-false}
 
       # Razorpay Test Payments
       PAYMENT_MODE: ${PAYMENT_MODE:-demo}
@@ -48,6 +62,13 @@ services:
 
     ports:
       - "3000:3000"
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    profiles: ["mail-test"]
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
 
 volumes:
   mongo_data:

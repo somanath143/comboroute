@@ -4,11 +4,14 @@ import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { UserModel, CustomerModel, AddressModel, CounterModel } from './models/index.js';
 import { asyncRoute, ApiError, parse } from './middleware/errors.js';
-import { requireUser, publicUser, issueSession, clearSession } from './middleware/identity.js';
-import { hashPassword, checkPassword } from './services/security.js';
+import { requireUser, publicUser, issueSession, clearSession, setSessionCookie } from './middleware/identity.js';
+import { checkPassword } from './services/security.js';
+import { requestSignup, resendSignup, verifySignup } from './services/signup.js';
 export const authRouter = Router();
-const credentialsLimiter = rateLimit({ windowMs: 15 * 60_000, limit: 15, standardHeaders: 'draft-7', legacyHeaders: false });
-const signupSchema = z.object({ name: z.string().trim().min(2).max(80), email: z.string().email().max(200).transform(s => s.toLowerCase().trim()), password: z.string().min(12).max(128) }).strict();
+const limitResponse = { error: 'Too many authentication attempts. Please wait 15 minutes and try again.' };
+const credentialsLimiter = rateLimit({ windowMs: 15 * 60_000, limit: 15, standardHeaders: 'draft-7', legacyHeaders: false, message: limitResponse });
+const signupSendLimiter = rateLimit({ windowMs: 15 * 60_000, limit: 10, standardHeaders: 'draft-7', legacyHeaders: false, message: limitResponse });
+const signupVerifyLimiter = rateLimit({ windowMs: 15 * 60_000, limit: 30, standardHeaders: 'draft-7', legacyHeaders: false, message: limitResponse });
 const loginSchema = z.object({ email: z.string().email().transform(s => s.toLowerCase().trim()), password: z.string().min(1) }).strict();
 export async function nextId(name, minimum = 1000) {
   await CounterModel.updateOne({ _id: name }, { $setOnInsert: { value: minimum - 1 } }, { upsert: true });
@@ -16,23 +19,16 @@ export async function nextId(name, minimum = 1000) {
   return doc.value;
 }
 authRouter.get('/me', (req, res) => res.json({ user: req.user ?? null }));
-authRouter.post('/register', credentialsLimiter, asyncRoute(async (req, res) => {
-  const input = parse(signupSchema, req.body);
-  if (await UserModel.exists({ email: input.email })) throw new ApiError(409, 'Email already registered');
-  const customerId = await nextId('customer_id');
-  const addressId = await nextId('address_id');
-  const session = await mongoose.startSession();
-  let user;
-  try {
-    await session.withTransaction(async () => {
-      [user] = await UserModel.create([{ email: input.email, name: input.name, password_hash: await hashPassword(input.password), role: 'customer', customer_id: customerId }], { session });
-      await CustomerModel.create([{ id: customerId, name: input.name, email: input.email }], { session });
-      // Each account receives its own fictional location, editable in Profile.
-      await AddressModel.create([{ id: addressId, customer_id: customerId, label: 'Demo delivery location', line: 'IIT Kharagpur, West Bengal (simulation)', coordinates: [22.3194, 87.3094] }], { session });
-    });
-  } finally { await session.endSession(); }
-  await issueSession(req, res, user);
-  res.status(201).json({ user: publicUser(user) });
+authRouter.post('/register', signupSendLimiter, asyncRoute(async (req, res) => {
+  res.set('Cache-Control', 'no-store').status(202).json(await requestSignup(req.body));
+}));
+authRouter.post('/register/resend', signupSendLimiter, asyncRoute(async (req, res) => {
+  res.set('Cache-Control', 'no-store').status(202).json(await resendSignup(req.body));
+}));
+authRouter.post('/register/verify', signupVerifyLimiter, asyncRoute(async (req, res) => {
+  const { user, token } = await verifySignup(req.body, { request_id: req.requestId });
+  setSessionCookie(req, res, token);
+  res.set('Cache-Control', 'no-store').status(201).json({ user: publicUser(user) });
 }));
 authRouter.post('/login', credentialsLimiter, asyncRoute(async (req, res) => {
   const input = parse(loginSchema, req.body);

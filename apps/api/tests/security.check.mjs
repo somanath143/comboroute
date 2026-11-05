@@ -15,6 +15,9 @@ test('hex signatures compare correctly and tokens are hashed', () => {
   assert.equal(equalHex('aabb', 'aabc'), false);
   assert.equal(equalHex('aa', 'aaaa'), false);
   assert.equal(equalHex('garbage', 'aaaa'), false);
+  assert.equal(equalHex('aabb', 'aabba'), false);
+  assert.equal(equalHex('a', 'a'), false);
+  assert.equal(equalHex('aabb', 'AABB'), true);
   assert.equal(tokenHash('token'), tokenHash('token'));
   assert.notEqual(tokenHash('token'), 'token');
 });

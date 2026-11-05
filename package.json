@@ -18,6 +18,10 @@
     "test:e2e": "playwright test",
     "seed": "npm run seed -w @comboroute/api",
     "start": "npm run start -w @comboroute/api",
+    "worker": "node apps/api/dist/worker.js",
+    "worker:dev": "node --watch apps/api/src/worker.js",
+    "test:load": "node scripts/load-test.mjs",
+    "benchmark:db": "node scripts/benchmark-db.mjs",
     "test:security": "node --test apps/api/tests/security.check.mjs"
   },
   "devDependencies": {

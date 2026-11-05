@@ -10,28 +10,28 @@ function cookieValue(req) {
   return entry ? entry.slice(COOKIE.length + 1) : null;
 }
 const cookieOptions = req => ({ httpOnly: true, secure: req.secure || req.headers['x-forwarded-proto'] === 'https', sameSite: 'lax', path: '/' });
+export const newSessionToken = () => randomBytes(32).toString('hex');
+export function setSessionCookie(req, res, token) { res.cookie(COOKIE, token, { ...cookieOptions(req), maxAge: SEVEN_DAYS }); }
 export async function issueSession(req, res, user) {
-  const token = randomBytes(32).toString('hex');
+  const token = newSessionToken();
   await SessionModel.create({ token_hash: tokenHash(token), user_id: user._id, expires_at: new Date(Date.now() + SEVEN_DAYS) });
-  res.cookie(COOKIE, token, { ...cookieOptions(req), maxAge: SEVEN_DAYS });
+  setSessionCookie(req, res, token);
 }
 export async function clearSession(req, res) {
   const token = cookieValue(req);
   if (token) await SessionModel.deleteOne({ token_hash: tokenHash(token) });
   res.clearCookie(COOKIE, cookieOptions(req));
 }
+export async function loadSessionUser(req) {
+  const token = cookieValue(req);
+  if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
+  const session = await SessionModel.findOne({ token_hash: tokenHash(token), expires_at: { $gt: new Date() } }).lean();
+  if (!session) return null;
+  const user = await UserModel.findById(session.user_id).lean();
+  return user && !user.disabled ? publicUser(user) : null;
+}
 export async function loadIdentity(req, _res, next) {
-  try {
-    const token = cookieValue(req);
-    if (token && /^[a-f0-9]{64}$/.test(token)) {
-      const session = await SessionModel.findOne({ token_hash: tokenHash(token), expires_at: { $gt: new Date() } }).lean();
-      if (session) {
-        const user = await UserModel.findById(session.user_id).lean();
-        if (user && !user.disabled) req.user = publicUser(user);
-      }
-    }
-    next();
-  } catch (error) { next(error); }
+  try { req.user = await loadSessionUser(req); next(); } catch (error) { next(error); }
 }
 export function requireUser(req, _res, next) {
   if (!req.user) return next(new ApiError(401, 'Please sign in to continue'));
@@ -52,7 +52,7 @@ export function verifySameOrigin(req, _res, next) {
     try {
       const expected = `${req.protocol}://${req.get('host')}`;
       const forwarded = req.get('x-forwarded-proto') ? `${req.get('x-forwarded-proto')}://${req.get('host')}` : expected;
-      if (origin !== expected && origin !== forwarded && !(process.env.NODE_ENV !== 'production' && (process.env.CORS_ORIGIN ?? '').split(',').includes(origin)))
+      if (origin !== expected && origin !== forwarded && !(process.env.NODE_ENV !== 'production' && (process.env.CORS_ORIGIN ?? '').split(',').map(s => s.trim()).includes(origin)))
         return next(new ApiError(403, 'Cross-origin mutation blocked'));
     } catch { return next(new ApiError(403, 'Invalid origin')); }
   }

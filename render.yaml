@@ -17,3 +17,12 @@ services:
         sync: false
       - key: BOOTSTRAP_ADMIN_PASSWORD
         sync: false
+      - key: EMAIL_OTP_SECRET
+        generateValue: true
+      - key: MAIL_FROM
+        sync: false
+      # Free instances block SMTP ports 465/587. Use a verified HTTPS email sender.
+      - key: EMAIL_PROVIDER
+        value: brevo
+      - key: BREVO_API_KEY
+        sync: false
